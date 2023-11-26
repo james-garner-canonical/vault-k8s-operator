@@ -14,11 +14,7 @@ from typing import IO, Dict, List, Optional, Tuple
 
 import boto3  # type: ignore[import-untyped]
 import hcl  # type: ignore[import-untyped]
-<<<<<<< HEAD
 from botocore.exceptions import BotoCoreError, ClientError
-=======
-from botocore.exceptions import ClientError  # type: ignore[import-untyped]
->>>>>>> 9533e8d (Implements action)
 from charms.certificate_transfer_interface.v0.certificate_transfer import (
     CertificateTransferProvides,
 )

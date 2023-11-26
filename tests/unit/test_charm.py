@@ -8,6 +8,7 @@ from typing import List
 from unittest.mock import Mock, call, patch
 
 import hcl  # type: ignore[import-untyped]
+from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 from ops import testing
 from ops.model import ActiveStatus, WaitingStatus
 

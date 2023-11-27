@@ -845,7 +845,52 @@ class VaultCharm(CharmBase):
             if isinstance(value, str):
                 s3_parameters[key] = value.strip()
 
+<<<<<<< HEAD
         return s3_parameters
+=======
+        return s3_parameters, []
+
+    def _create_s3_bucket(
+        self,
+        session: boto3.session.Session,
+        bucket_name: str,
+        endpoint: str,
+        region: str,
+    ) -> None:
+        """Create S3 bucket.
+
+        If the bucket already exists, it will be skipped.
+
+        Args:
+            session: S3 session.
+            region: S3 region.
+            bucket_name: S3 bucket name.
+            endpoint: S3 endpoint.
+        """
+        s3 = session.resource("s3", endpoint_url=endpoint)
+        try:
+            # Checking if bucket already exists
+            bucket = s3.Bucket(bucket_name)
+            bucket.meta.client.head_bucket(Bucket=bucket_name)
+            logger.info("Bucket %s exists.", bucket_name)
+            return
+        except ClientError:
+            logger.warning("Bucket %s doesn't exist, creating it.", bucket_name)
+            pass
+        except BotoCoreError as e:
+            logger.warning("Failed to check wether bucket exists. %s", e)
+            raise e
+        try:
+            if region == "us-east-1":
+                bucket.create()
+            else:
+                bucket.create(CreateBucketConfiguration={"LocationConstraint": region})
+            bucket.wait_until_exists()
+            logger.info("Created bucket '%s' in region=%s", bucket_name, region)
+        except (BotoCoreError, ClientError) as error:
+            logger.warning("Couldn't create bucket named '%s' in region=%s.", bucket_name, region)
+            raise error
+>>>>>>> 9015808 (Fixes lint and test assertion in a test case)
 
     def _is_peer_relation_created(self) -> bool:
         """Check if the peer relation is created."""

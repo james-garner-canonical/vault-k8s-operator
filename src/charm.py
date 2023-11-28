@@ -481,24 +481,10 @@ class VaultCharm(CharmBase):
             event.fail(message="Failed to create S3 bucket.")
             return
 
-<<<<<<< HEAD
         snapshot = self._create_raft_snapshot()
         if not snapshot:
             logger.error("Failed to create raft snapshot")
             event.fail(message="Failed to create raft snapshot.")
-=======
-        try:
-            self._create_s3_bucket(
-                session=session,
-                region=s3_parameters["region"],
-                bucket_name=s3_parameters["bucket"],
-                endpoint=s3_parameters["endpoint"],
-            )
-            logger.info("Created S3 bucket %s", s3_parameters["bucket"])
-        except KeyError as e:
-            logger.warning("Missing required S3 parameter: %s", e)
-            event.fail(message="Failed to create S3 bucket.")
->>>>>>> ef835e6 (Addresses review comments)
             return
         backup_key = self._get_backup_key()
         content_uploaded = s3.upload_content(
@@ -513,38 +499,6 @@ class VaultCharm(CharmBase):
         logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
         event.set_results({"backup-id": backup_key})
 
-<<<<<<< HEAD
-=======
-    def _upload_byte_content_to_s3(
-        self,
-        session: boto3.session.Session,
-        content: bytes,
-        bucket_name: str,
-        endpoint: str,
-    ) -> Optional[str]:
-        """Uploads the provided contents to the provided S3 bucket.
-
-        Args:
-            session: S3 session.
-            content: Byte contents to upload.
-            bucket_name: S3 bucket name.
-            endpoint: S3 endpoint.
-
-        Returns:
-            str: The S3 key of the uploaded content.
-        """
-        key = self._get_backup_key()
-        try:
-            s3 = session.resource("s3", endpoint_url=endpoint)
-            bucket = s3.Bucket(bucket_name)
-            bucket.put_object(Key=key, Body=content)
-        except (BotoCoreError, ClientError) as e:
-            logger.warning("Error uploading content to bucket %s: %s", bucket_name, e)
-            return None
-
-        return key
-
->>>>>>> ef835e6 (Addresses review comments)
     def _get_backup_key(self) -> str:
         """Returns the backup key.
 
@@ -891,51 +845,7 @@ class VaultCharm(CharmBase):
             if isinstance(value, str):
                 s3_parameters[key] = value.strip()
 
-<<<<<<< HEAD
         return s3_parameters
-=======
-        return s3_parameters, []
-
-    def _create_s3_bucket(
-        self,
-        session: boto3.session.Session,
-        bucket_name: str,
-        endpoint: str,
-        region: str,
-    ) -> None:
-        """Create S3 bucket.
-
-        If the bucket already exists, it will be skipped.
-
-        Args:
-            session: S3 session.
-            region: S3 region.
-            bucket_name: S3 bucket name.
-            endpoint: S3 endpoint.
-        """
-        s3 = session.resource("s3", endpoint_url=endpoint)
-        try:
-            # Checking if bucket already exists
-            bucket = s3.Bucket(bucket_name)
-            bucket.meta.client.head_bucket(Bucket=bucket_name)
-            logger.info("Bucket %s exists.", bucket_name)
-            return
-        except ClientError:
-            logger.info("Bucket %s doesn't exist, creating it.", bucket_name)
-            pass
-        except BotoCoreError as e:
-            logger.warning("Failed to check wether bucket exists. %s", e)
-            raise e
-        try:
-            if region == "us-east-1":
-                bucket.create()
-            else:
-                bucket.create(CreateBucketConfiguration={"LocationConstraint": region})
-            bucket.wait_until_exists()
-        except (BotoCoreError, ClientError) as error:
-            logger.warning("Couldn't create bucket named '%s' in region=%s.", bucket_name, region)
-            raise error
->>>>>>> 9015808 (Fixes lint and test assertion in a test case)
 
     def _is_peer_relation_created(self) -> bool:
         """Check if the peer relation is created."""

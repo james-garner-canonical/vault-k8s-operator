@@ -481,10 +481,24 @@ class VaultCharm(CharmBase):
             event.fail(message="Failed to create S3 bucket.")
             return
 
+<<<<<<< HEAD
         snapshot = self._create_raft_snapshot()
         if not snapshot:
             logger.error("Failed to create raft snapshot")
             event.fail(message="Failed to create raft snapshot.")
+=======
+        try:
+            self._create_s3_bucket(
+                session=session,
+                region=s3_parameters["region"],
+                bucket_name=s3_parameters["bucket"],
+                endpoint=s3_parameters["endpoint"],
+            )
+            logger.info("Created S3 bucket %s", s3_parameters["bucket"])
+        except KeyError as e:
+            logger.warning("Missing required S3 parameter: %s", e)
+            event.fail(message="Failed to create S3 bucket.")
+>>>>>>> ef835e6 (Addresses review comments)
             return
         backup_key = self._get_backup_key()
         content_uploaded = s3.upload_content(
@@ -499,6 +513,38 @@ class VaultCharm(CharmBase):
         logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
         event.set_results({"backup-id": backup_key})
 
+<<<<<<< HEAD
+=======
+    def _upload_byte_content_to_s3(
+        self,
+        session: boto3.session.Session,
+        content: bytes,
+        bucket_name: str,
+        endpoint: str,
+    ) -> Optional[str]:
+        """Uploads the provided contents to the provided S3 bucket.
+
+        Args:
+            session: S3 session.
+            content: Byte contents to upload.
+            bucket_name: S3 bucket name.
+            endpoint: S3 endpoint.
+
+        Returns:
+            str: The S3 key of the uploaded content.
+        """
+        key = self._get_backup_key()
+        try:
+            s3 = session.resource("s3", endpoint_url=endpoint)
+            bucket = s3.Bucket(bucket_name)
+            bucket.put_object(Key=key, Body=content)
+        except (BotoCoreError, ClientError) as e:
+            logger.warning("Error uploading content to bucket %s: %s", bucket_name, e)
+            return None
+
+        return key
+
+>>>>>>> ef835e6 (Addresses review comments)
     def _get_backup_key(self) -> str:
         """Returns the backup key.
 
@@ -875,7 +921,7 @@ class VaultCharm(CharmBase):
             logger.info("Bucket %s exists.", bucket_name)
             return
         except ClientError:
-            logger.warning("Bucket %s doesn't exist, creating it.", bucket_name)
+            logger.info("Bucket %s doesn't exist, creating it.", bucket_name)
             pass
         except BotoCoreError as e:
             logger.warning("Failed to check wether bucket exists. %s", e)
@@ -886,7 +932,6 @@ class VaultCharm(CharmBase):
             else:
                 bucket.create(CreateBucketConfiguration={"LocationConstraint": region})
             bucket.wait_until_exists()
-            logger.info("Created bucket '%s' in region=%s", bucket_name, region)
         except (BotoCoreError, ClientError) as error:
             logger.warning("Couldn't create bucket named '%s' in region=%s.", bucket_name, region)
             raise error

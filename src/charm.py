@@ -12,7 +12,6 @@ import logging
 import socket
 from typing import IO, Dict, List, Optional, Tuple
 
-import boto3
 import hcl  # type: ignore[import-untyped]
 from botocore.exceptions import BotoCoreError, ClientError
 from charms.certificate_transfer_interface.v0.certificate_transfer import (

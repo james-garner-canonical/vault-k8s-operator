@@ -72,6 +72,7 @@ SEND_CA_CERT_RELATION_NAME = "send-ca-cert"
 VAULT_INITIALIZATION_SECRET_LABEL = "vault-initialization"
 S3_RELATION_NAME = "s3-parameters"
 REQUIRED_S3_PARAMETERS = ["bucket", "access-key", "secret-key", "endpoint"]
+BACKUP_KEY_PREFIX = "vault-backup"
 
 
 def render_vault_config_file(
@@ -248,6 +249,8 @@ class VaultCharm(CharmBase):
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
+        self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
+        self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
         self.framework.observe(
             self.vault_kv.on.new_vault_kv_client_attached, self._on_new_vault_kv_client_attached
         )
@@ -498,6 +501,118 @@ class VaultCharm(CharmBase):
         logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
         event.set_results({"backup-id": backup_key})
 
+    def _on_list_backups_action(self, event: ActionEvent) -> None:
+        """Handles list-backups action.
+
+        Lists all backups stored in S3 bucket.
+
+        Args:
+            event: ActionEvent
+        """
+        if not self._is_relation_created(S3_RELATION_NAME):
+            event.fail(message="S3 relation not created. Failed to list backups.")
+            return
+
+        if not self.unit.is_leader():
+            event.fail(message="Only leader unit can list backups.")
+            return
+
+        s3_parameters, missing_parameters = self._retrieve_s3_parameters()
+        if missing_parameters:
+            event.fail(message=f"S3 parameters missing. {missing_parameters}")
+            return
+
+        if not (session := self._create_s3_session(s3_parameters)):
+            event.fail(message="Failed to create S3 session.")
+            return
+
+        try:
+            backup_ids = self._get_backup_ids_list_from_s3(
+                session=session,
+                bucket_name=s3_parameters["bucket"],
+                endpoint=s3_parameters["endpoint"],
+            )
+            event.set_results({"backup-ids": backup_ids})
+        except (BotoCoreError, ClientError) as e:
+            logger.warning("Failed to list backups: %s", e)
+            event.fail(message="Failed to list backups.")
+            return
+
+    def _on_restore_backup_action(self, event: ActionEvent) -> None:
+        """Handles restore-backup action.
+ 
+        Args:
+            event: ActionEvent
+        """
+        if not self._is_relation_created(S3_RELATION_NAME):
+            event.fail(message="S3 relation not created. Failed to list backups.")
+            return
+
+        if not self.unit.is_leader():
+            event.fail(message="Only leader unit can list backups.")
+            return
+
+        s3_parameters, missing_parameters = self._retrieve_s3_parameters()
+        if missing_parameters:
+            event.fail(message=f"S3 parameters missing. {missing_parameters}")
+            return
+        
+        if not (session := self._create_s3_session(s3_parameters)):
+            event.fail(message="Failed to create S3 session.")
+            return
+
+        try:
+            snapshot = self._get_byte_contetnt_from_s3_by_key(event.backup_id)
+        except (BotoCoreError, ClientError) as e:
+            logger.warning("Failed to list backups: %s", e)
+            event.fail(message="Failed to list backups.")
+            return
+
+        try:
+            self._restore_vault(snapshot)
+        except (BotoCoreError, ClientError) as e:
+            logger.warning("Failed to list backups: %s", e)
+            event.fail(message="Failed to list backups.")
+            return
+
+        event.set_results({"restored": event.backup_id})
+
+    def _get_byte_contetnt_from_s3_by_key(self, session, bucket_name, key, endpoint):
+        """Get byte content from S3 by key.
+        
+        Args:
+            session: S3 session.
+            bucket_name: S3 bucket name.
+            key: S3 key.
+            endpoint: S3 endpoint.
+            
+            Returns:
+                bytes: Byte content.
+        """
+        try:
+            s3 = session.resource("s3", endpoint_url=endpoint)
+            obj = s3.Object(bucket_name, key)
+            response = obj.get()
+            return response['Body'].read()
+        except (BotoCoreError, ClientError) as e:
+            logger.warning("Error downloading backup %s from bucket %s: %s", key, bucket_name, e)
+            return None
+        
+    def _restore_vault(self, snapshot, unseal_key, root_token):
+        """Restore vault using a raft snapshot.
+        
+        Args:
+            snapshot: Snapshot.
+        """
+        self._set_initialization_secret_in_peer_relation(root_token, unseal_key)
+        vault = Vault(url=self._api_address, ca_cert_path=self._get_ca_cert_location_in_charm())
+        if not vault.is_api_available():
+            logger.warning("Vault is not available, cannot restore snapshot.")
+            return False
+        vault.set_token(token=root_token)
+        vault.unseal(unseal_keys=unseal_key)
+        vault.restore_snapshot(snapshot)
+
     def _get_backup_key(self) -> str:
         """Returns the backup key.
 
@@ -505,7 +620,7 @@ class VaultCharm(CharmBase):
             str: The backup key
         """
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        return f"vault-backup-{self.model.name}-{timestamp}"
+        return f"{BACKUP_KEY_PREFIX}-{self.model.name}-{timestamp}"
 
     def _get_ca_cert_location_in_charm(self) -> str:
         """Returns the CA certificate location in the charm (not in the workload).
@@ -1025,6 +1140,34 @@ class VaultCharm(CharmBase):
             for node_api_address in self._get_peer_relation_node_api_addresses()
             if node_api_address != self._api_address
         ]
+
+    def _get_backup_ids_list_from_s3(
+        self,
+        session: boto3.session.Session,
+        bucket_name: str,
+        endpoint: str,
+    ) -> List[str]:
+        """Returns list of backups from S3 bucket.
+
+        Args:
+            session: S3 session.
+            bucket_name: S3 bucket name where backups are stored.
+            endpoint: S3 endpoint.
+        """
+        backup_ids = []
+        try:
+            s3 = session.resource("s3", endpoint_url=endpoint)
+            bucket = s3.Bucket(bucket_name)
+            bucket.meta.client.head_bucket(Bucket=bucket_name)
+            for obj in bucket.objects.filter(Prefix=BACKUP_KEY_PREFIX):
+                backup_ids.append(obj.key)
+            return backup_ids
+        except ClientError:
+            logger.warning("Bucket %s doesn't exist.", bucket_name)
+            return []
+        except BotoCoreError as e:
+            logger.warning("Error getting backup list from %s: %s", bucket_name, e)
+            raise e
 
     @property
     def _node_id(self) -> str:

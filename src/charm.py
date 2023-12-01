@@ -517,29 +517,40 @@ class VaultCharm(CharmBase):
             event.fail(message="Only leader unit can list backups.")
             return
 
-        s3_parameters, missing_parameters = self._retrieve_s3_parameters()
+        missing_parameters = self._get_missing_s3_parameters()
         if missing_parameters:
             event.fail(message=f"S3 parameters missing. {missing_parameters}")
             return
+        s3_parameters = self._retrieve_s3_parameters()
 
-        if not (session := self._create_s3_session(s3_parameters)):
+        try:
+            s3 = S3(
+                access_key=s3_parameters["access-key"],
+                secret_key=s3_parameters["secret-key"],
+                endpoint=s3_parameters["endpoint"],
+                region=s3_parameters.get("region"),
+            )
+        except (BotoCoreError, ClientError, ValueError) as e:
+            logger.error("Failed to create S3 session: %s", e)
             event.fail(message="Failed to create S3 session.")
             return
 
         try:
-            backup_ids = self._get_backup_ids_list_from_s3(
-                session=session,
-                bucket_name=s3_parameters["bucket"],
-                endpoint=s3_parameters["endpoint"],
+            backup_ids = s3.get_object_key_list(
+                bucket_name=s3_parameters["bucket"], prefix=BACKUP_KEY_PREFIX
             )
-            event.set_results({"backup-ids": backup_ids})
         except (BotoCoreError, ClientError) as e:
             logger.warning("Failed to list backups: %s", e)
             event.fail(message="Failed to list backups.")
             return
+        event.set_results({"backup-ids": backup_ids})
 
     def _on_restore_backup_action(self, event: ActionEvent) -> None:
         """Handles restore-backup action.
+
+        Restores the snapshot with the provided ID.
+        Unseals Vault using the provided unseal key.
+        Sets the root token to the provided root token.
  
         Args:
             event: ActionEvent
@@ -552,66 +563,109 @@ class VaultCharm(CharmBase):
             event.fail(message="Only leader unit can list backups.")
             return
 
-        s3_parameters, missing_parameters = self._retrieve_s3_parameters()
+        missing_parameters = self._get_missing_s3_parameters()
         if missing_parameters:
             event.fail(message=f"S3 parameters missing. {missing_parameters}")
             return
-        
-        if not (session := self._create_s3_session(s3_parameters)):
+        s3_parameters = self._retrieve_s3_parameters()
+
+        try:
+            s3 = S3(
+                access_key=s3_parameters["access-key"],
+                secret_key=s3_parameters["secret-key"],
+                endpoint=s3_parameters["endpoint"],
+                region=s3_parameters.get("region"),
+            )
+        except (BotoCoreError, ClientError, ValueError) as e:
+            logger.error("Failed to create S3 session: %s", e)
             event.fail(message="Failed to create S3 session.")
             return
 
         try:
-            snapshot = self._get_byte_contetnt_from_s3_by_key(event.backup_id)
+            snapshot = s3.get_content(
+                bucket_name=s3_parameters["bucket"], object_key=event.backup_id
+            )
         except (BotoCoreError, ClientError) as e:
-            logger.warning("Failed to list backups: %s", e)
-            event.fail(message="Failed to list backups.")
+            logger.error("Failed to retrieve snapshot from S3 storage: %s", e)
+            event.fail(message="Failed to retrieve snapshot from S3 storage.")
             return
-
+        if not snapshot:
+            event.fail(f"Backup {event.backup_id} not found in S3 bucket {s3_parameters['bucket']}.")
         try:
-            self._restore_vault(snapshot)
+            if not (
+                self._restore_vault(
+                    snapshot=snapshot,
+                    restore_unseal_key=event.unseal_key,
+                    restore_root_token=event.root_token,
+                )
+            ):
+                event.fail(message="Failed to restore vault.")
+                return
         except (BotoCoreError, ClientError) as e:
-            logger.warning("Failed to list backups: %s", e)
-            event.fail(message="Failed to list backups.")
+            logger.error("Failed to restore vault.")
+            event.fail(message="Failed to restore vault.")
             return
-
         event.set_results({"restored": event.backup_id})
-
-    def _get_byte_contetnt_from_s3_by_key(self, session, bucket_name, key, endpoint):
-        """Get byte content from S3 by key.
         
-        Args:
-            session: S3 session.
-            bucket_name: S3 bucket name.
-            key: S3 key.
-            endpoint: S3 endpoint.
-            
-            Returns:
-                bytes: Byte content.
-        """
-        try:
-            s3 = session.resource("s3", endpoint_url=endpoint)
-            obj = s3.Object(bucket_name, key)
-            response = obj.get()
-            return response['Body'].read()
-        except (BotoCoreError, ClientError) as e:
-            logger.warning("Error downloading backup %s from bucket %s: %s", key, bucket_name, e)
-            return None
-        
-    def _restore_vault(self, snapshot, unseal_key, root_token):
+    def _restore_vault(self, snapshot, restore_unseal_key, restore_root_token) -> bool:
         """Restore vault using a raft snapshot.
+
+        First it will unseal Vault using the currently store unseal key.
+        It will set the root token to ensure privileged access to Vault.
+        It will set the initialization secret in the peer relation
+            with the restore unseal key and root token.
+        Upon successful secret set, it will restore the snapshot.
+        Upon successful snapshot restore,
+            it will unseal Vault using the restore unseal key.
         
         Args:
-            snapshot: Snapshot.
+            snapshot: Snapshot taken during backup.
+            restore_unseal_key: Unseal key used at the time of the backup.
+            restore_root_token: Root token used at the time of the backup.
+
+        returns:
+            bool: True if the restore was successful, False otherwise.
         """
-        self._set_initialization_secret_in_peer_relation(root_token, unseal_key)
         vault = Vault(url=self._api_address, ca_cert_path=self._get_ca_cert_location_in_charm())
-        if not vault.is_api_available():
-            logger.warning("Vault is not available, cannot restore snapshot.")
+        if not vault.is_initialized():
+            logger.error("Vault is not initialized, cannot create snapshot")
             return False
-        vault.set_token(token=root_token)
-        vault.unseal(unseal_keys=unseal_key)
-        vault.restore_snapshot(snapshot)
+        if not vault.is_api_available():
+            logger.error("Vault API is not available, cannot create snapshot")
+            return False
+        try:
+            current_root_token, current_unseal_keys = self._get_initialization_secret_from_peer_relation()
+        except PeerSecretError:
+            logger.error(
+                "Vault initialization secret not set in peer relation, cannot create snapshot"
+            )
+            return False
+        vault.set_token(token=current_root_token)
+        if vault.is_sealed():
+            vault.unseal(unseal_keys=current_unseal_keys)
+
+        self._set_initialization_secret_in_peer_relation(
+            restore_unseal_key, restore_root_token
+        )
+        try:
+            response = vault.restore_snapshot(snapshot)
+        except Exception as e:
+            logger.error("Failed to restore snapshot: %s", e)
+            self._set_initialization_secret_in_peer_relation(
+                current_unseal_keys, current_root_token
+            )
+            return False
+        if not 200 <= response.status_code < 300:
+            logger.error("Failed to restore snapshot: %s", response.json())
+            self._set_initialization_secret_in_peer_relation(
+                current_unseal_keys, current_root_token
+            )
+            return False
+
+        vault.set_token(token=restore_unseal_key)
+        vault.unseal(unseal_keys=restore_root_token)
+
+        return True
 
     def _get_backup_key(self) -> str:
         """Returns the backup key.
@@ -1140,34 +1194,6 @@ class VaultCharm(CharmBase):
             for node_api_address in self._get_peer_relation_node_api_addresses()
             if node_api_address != self._api_address
         ]
-
-    def _get_backup_ids_list_from_s3(
-        self,
-        session: boto3.session.Session,
-        bucket_name: str,
-        endpoint: str,
-    ) -> List[str]:
-        """Returns list of backups from S3 bucket.
-
-        Args:
-            session: S3 session.
-            bucket_name: S3 bucket name where backups are stored.
-            endpoint: S3 endpoint.
-        """
-        backup_ids = []
-        try:
-            s3 = session.resource("s3", endpoint_url=endpoint)
-            bucket = s3.Bucket(bucket_name)
-            bucket.meta.client.head_bucket(Bucket=bucket_name)
-            for obj in bucket.objects.filter(Prefix=BACKUP_KEY_PREFIX):
-                backup_ids.append(obj.key)
-            return backup_ids
-        except ClientError:
-            logger.warning("Bucket %s doesn't exist.", bucket_name)
-            return []
-        except BotoCoreError as e:
-            logger.warning("Error getting backup list from %s: %s", bucket_name, e)
-            raise e
 
     @property
     def _node_id(self) -> str:

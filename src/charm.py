@@ -589,21 +589,21 @@ class VaultCharm(CharmBase):
 
         try:
             snapshot = s3.get_content(
-                bucket_name=s3_parameters["bucket"], object_key=event.backup_id
+                bucket_name=s3_parameters["bucket"], object_key=event.params.get('backup-id')
             )
         except (BotoCoreError, ClientError) as e:
             logger.error("Failed to retrieve snapshot from S3 storage: %s", e)
             event.fail(message="Failed to retrieve snapshot from S3 storage.")
             return
         if not snapshot:
-            logger.error(f"Backup {event.backup_id} not found in S3 bucket {s3_parameters['bucket']}.")
-            event.fail(f"Backup {event.backup_id} not found in S3 bucket {s3_parameters['bucket']}.")
+            logger.error(f"Backup {event.params.get('backup-id')} not found in S3 bucket {s3_parameters['bucket']}.")
+            event.fail(f"Backup {event.params.get('backup-id')} not found in S3 bucket {s3_parameters['bucket']}.")
         try:
             if not (
                 self._restore_vault(
                     snapshot=snapshot,
-                    restore_unseal_key=event.unseal_key,
-                    restore_root_token=event.root_token,
+                    restore_unseal_key=event.params.get('unseal-key'),
+                    restore_root_token=event.params.get('root-token'),
                 )
             ):
                 logger.error("Failed to restore vault.")
@@ -613,7 +613,7 @@ class VaultCharm(CharmBase):
             logger.error("Failed to restore vault.")
             event.fail(message="Failed to restore vault.")
             return
-        event.set_results({"restored": event.backup_id})
+        event.set_results({"restored": event.params.get('backup-id')})
         
     def _restore_vault(self, snapshot, restore_unseal_key, restore_root_token) -> bool:
         """Restore vault using a raft snapshot.

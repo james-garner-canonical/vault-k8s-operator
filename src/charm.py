@@ -510,15 +510,18 @@ class VaultCharm(CharmBase):
             event: ActionEvent
         """
         if not self._is_relation_created(S3_RELATION_NAME):
+            logger.error("S3 relation not created. Failed to list backups.")
             event.fail(message="S3 relation not created. Failed to list backups.")
             return
 
         if not self.unit.is_leader():
+            logger.error("Only leader unit can list backups.")
             event.fail(message="Only leader unit can list backups.")
             return
 
         missing_parameters = self._get_missing_s3_parameters()
         if missing_parameters:
+            logger.error("S3 parameters missing. %s", missing_parameters)
             event.fail(message=f"S3 parameters missing. {missing_parameters}")
             return
         s3_parameters = self._retrieve_s3_parameters()
@@ -540,7 +543,7 @@ class VaultCharm(CharmBase):
                 bucket_name=s3_parameters["bucket"], prefix=BACKUP_KEY_PREFIX
             )
         except (BotoCoreError, ClientError) as e:
-            logger.warning("Failed to list backups: %s", e)
+            logger.error("Failed to list backups: %s", e)
             event.fail(message="Failed to list backups.")
             return
         event.set_results({"backup-ids": backup_ids})
@@ -556,15 +559,18 @@ class VaultCharm(CharmBase):
             event: ActionEvent
         """
         if not self._is_relation_created(S3_RELATION_NAME):
+            logger.error("S3 relation not created. Failed to list backups.")
             event.fail(message="S3 relation not created. Failed to list backups.")
             return
 
         if not self.unit.is_leader():
+            logger.error("Only leader unit can list backups.")
             event.fail(message="Only leader unit can list backups.")
             return
 
         missing_parameters = self._get_missing_s3_parameters()
         if missing_parameters:
+            logger.error("S3 parameters missing. %s", missing_parameters)
             event.fail(message=f"S3 parameters missing. {missing_parameters}")
             return
         s3_parameters = self._retrieve_s3_parameters()
@@ -590,6 +596,7 @@ class VaultCharm(CharmBase):
             event.fail(message="Failed to retrieve snapshot from S3 storage.")
             return
         if not snapshot:
+            logger.error(f"Backup {event.backup_id} not found in S3 bucket {s3_parameters['bucket']}.")
             event.fail(f"Backup {event.backup_id} not found in S3 bucket {s3_parameters['bucket']}.")
         try:
             if not (
@@ -599,6 +606,7 @@ class VaultCharm(CharmBase):
                     restore_root_token=event.root_token,
                 )
             ):
+                logger.error("Failed to restore vault.")
                 event.fail(message="Failed to restore vault.")
                 return
         except (BotoCoreError, ClientError) as e:

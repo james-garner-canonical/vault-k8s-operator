@@ -980,11 +980,15 @@ class VaultCharm(CharmBase):
             "roottoken": root_token,
             "unsealkeys": json.dumps(unseal_keys),
         }
-        juju_secret = self.app.add_secret(
-            juju_secret_content, label=VAULT_INITIALIZATION_SECRET_LABEL
-        )
-        peer_relation = self.model.get_relation(PEER_RELATION_NAME)
-        peer_relation.data[self.app].update({"vault-initialization-secret-id": juju_secret.id})  # type: ignore[union-attr]  # noqa: E501
+        if not self._initialization_secret_set_in_peer_relation():
+            juju_secret = self.app.add_secret(
+                juju_secret_content, label=VAULT_INITIALIZATION_SECRET_LABEL
+            )
+            peer_relation = self.model.get_relation(PEER_RELATION_NAME)
+            peer_relation.data[self.app].update({"vault-initialization-secret-id": juju_secret.id})  # type: ignore[union-attr]  # noqa: E501
+            return
+        secret = self.model.get_secret(label=VAULT_INITIALIZATION_SECRET_LABEL)
+        secret.set_content(juju_secret_content)
 
     def _get_initialization_secret_from_peer_relation(self) -> Tuple[str, List[str]]:
         """Get the vault initialization secret from the peer relation.

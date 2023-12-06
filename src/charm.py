@@ -589,7 +589,7 @@ class VaultCharm(CharmBase):
 
         try:
             snapshot = s3.get_content(
-                bucket_name=s3_parameters["bucket"], object_key=event.params.get('backup-id')
+                bucket_name=s3_parameters["bucket"], object_key=event.params.get("backup-id")
             )
         except (BotoCoreError, ClientError) as e:
             logger.error("Failed to retrieve snapshot from S3 storage: %s", e)
@@ -602,8 +602,8 @@ class VaultCharm(CharmBase):
             if not (
                 self._restore_vault(
                     snapshot=snapshot,
-                    restore_unseal_key=event.params.get('unseal-key'),
-                    restore_root_token=event.params.get('root-token'),
+                    restore_unseal_keys=event.params.get("unseal-keys"),
+                    restore_root_token=event.params.get("root-token"),
                 )
             ):
                 logger.error("Failed to restore vault.")
@@ -615,7 +615,7 @@ class VaultCharm(CharmBase):
             return
         event.set_results({"restored": event.params.get('backup-id')})
         
-    def _restore_vault(self, snapshot, restore_unseal_key, restore_root_token) -> bool:
+    def _restore_vault(self, snapshot: IO[bytes], restore_unseal_keys: List[str], restore_root_token: str) -> bool:
         """Restore vault using a raft snapshot.
 
         First it will unseal Vault using the currently store unseal key.
@@ -628,7 +628,7 @@ class VaultCharm(CharmBase):
         
         Args:
             snapshot: Snapshot taken during backup.
-            restore_unseal_key: Unseal key used at the time of the backup.
+            restore_unseal_keys: List of nseal keys used at the time of the backup.
             restore_root_token: Root token used at the time of the backup.
 
         returns:
@@ -653,25 +653,25 @@ class VaultCharm(CharmBase):
             vault.unseal(unseal_keys=current_unseal_keys)
 
         self._set_initialization_secret_in_peer_relation(
-            restore_unseal_key, restore_root_token
+            root_token=restore_root_token, unseal_keys=restore_unseal_keys
         )
         try:
             response = vault.restore_snapshot(snapshot)
         except Exception as e:
             logger.error("Failed to restore snapshot: %s", e)
             self._set_initialization_secret_in_peer_relation(
-                current_unseal_keys, current_root_token
+                root_token=current_root_token, unseal_keys=current_unseal_keys
             )
             return False
         if not 200 <= response.status_code < 300:
             logger.error("Failed to restore snapshot: %s", response.json())
             self._set_initialization_secret_in_peer_relation(
-                current_unseal_keys, current_root_token
+                root_token=current_root_token, unseal_keys=current_unseal_keys
             )
             return False
 
-        vault.set_token(token=restore_unseal_key)
-        vault.unseal(unseal_keys=restore_root_token)
+        vault.set_token(token=restore_root_token)
+        vault.unseal(unseal_keys=restore_unseal_keys)
 
         return True
 
@@ -965,6 +965,7 @@ class VaultCharm(CharmBase):
         except (TypeError, SecretNotFoundError, AttributeError):
             raise PeerSecretError(secret_name=CA_CERTIFICATE_JUJU_SECRET_KEY)
 
+    # TODO update tests
     def _set_initialization_secret_in_peer_relation(
         self, root_token: str, unseal_keys: List[str]
     ) -> None:

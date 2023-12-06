@@ -19,12 +19,12 @@ restore-backup:
       type: string
       description: >-
         Backup ID to restore.
-    unseal-key:
-      type: string
+    unseal-keys:
+      type: array
       description: >-
         Unseal keys to use for unsealing the Vault after the restore.
     root-token:
       type: string
       description: >-
         Root token to use for unsealing the Vault after the restore.
-  required: [backup-id, unseal-key, root-token]
+  required: [backup-id, unseal-keys, root-token]

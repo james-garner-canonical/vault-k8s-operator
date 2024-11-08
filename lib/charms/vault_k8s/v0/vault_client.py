@@ -444,7 +444,7 @@ class Vault:
         """
         params = {
             "cleanup_dead_servers": True,
-            "dead_server_last_contact_threshold": "1m",
+            "dead_server_last_contact_threshold": "1h",
             "min_quorum": 3,
         }
         api_path = "/v1/sys/storage/raft/autopilot/configuration"

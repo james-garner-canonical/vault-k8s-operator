@@ -123,7 +123,7 @@ class VaultCharm(CharmBase):
         super().__init__(*args)
         self._service_name = self._container_name = CONTAINER_NAME
         self._container = Container(container=self.unit.get_container(self._container_name))
-        self.unit.set_ports(self.VAULT_PORT)
+        # self.unit.set_ports(self.VAULT_PORT)
         self.vault_kv = VaultKvProvides(self, KV_RELATION_NAME)
         self.vault_pki = TLSCertificatesProvidesV4(
             charm=self,

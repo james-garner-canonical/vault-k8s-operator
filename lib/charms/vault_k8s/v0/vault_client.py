@@ -9,12 +9,14 @@ intended to be used by charms that need to manage a Vault cluster.
 """
 
 import logging
+import socket
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from io import IOBase
-from typing import List, Protocol
+from typing import List, Protocol, TextIO, cast
 
+import hcl
 import hvac
 import requests
 from charms.vault_k8s.v0.vault_autounseal import (
@@ -22,9 +24,12 @@ from charms.vault_k8s.v0.vault_autounseal import (
     VaultAutounsealProvides,
     VaultAutounsealRequires,
 )
-from charms.vault_k8s.v0.vault_tls import File, VaultTLSManager
+from charms.vault_k8s.v0.vault_tls import File, VaultTLSManager, WorkloadBase
 from hvac.exceptions import Forbidden, InternalServerError, InvalidPath, InvalidRequest, VaultError
-from ops import Model, Relation, SecretNotFoundError
+from jinja2 import Environment, FileSystemLoader
+from juju.charm import Charm
+from ops import CharmBase, Model, ModelError, Relation, SecretNotFoundError, Unit
+from ops import Container as OpsContainer
 from requests.exceptions import ConnectionError, RequestException
 
 # The unique Charmhub library identifier, never change it
@@ -924,3 +929,217 @@ class VaultAutounsealRequirerManager:
             self._model.app.add_secret(content, label=label, description=description)
             return
         secret.set_content(content)
+
+
+class Container(WorkloadBase):
+    """Adapter class that wraps ops.Container into WorkloadBase."""
+
+    def __init__(self, container: OpsContainer):
+        self._container = container
+
+    def __getattr__(self, name):
+        """Delegate all unknown attributes to the container."""
+        return getattr(self._container, name)
+
+    def exists(self, path: str) -> bool:
+        """Check if a file exists in the workload."""
+        return self._container.exists(path=path)
+
+    def pull(self, path: str) -> TextIO:
+        """Read file from the workload."""
+        return self._container.pull(path=path)
+
+    def push(self, path: str, source: str) -> None:
+        """Write file to the workload."""
+        self._container.push(path=path, source=source)
+
+    def make_dir(self, path: str) -> None:
+        """Create directory in the workload."""
+        self._container.make_dir(path=path)
+
+    def remove_path(self, path: str, recursive: bool = False) -> None:
+        """Remove file or directory from the workload."""
+        self._container.remove_path(path=path, recursive=recursive)
+
+    def send_signal(self, signal: int, process: str) -> None:
+        """Send a signal to a process in the workload."""
+        self._container.send_signal(signal, process)
+
+    def restart(self, process: str) -> None:
+        """Restart the vault service."""
+        self._container.restart(process)
+
+    def stop(self, process: str) -> None:
+        """Stop the workload."""
+        self._container.stop(process)
+
+
+AUTOUNSEAL_PROVIDES_RELATION_NAME = "vault-autounseal-provides"
+AUTOUNSEAL_REQUIRES_RELATION_NAME = "vault-autounseal-requires"
+CONTAINER_TLS_FILE_DIRECTORY_PATH = "/vault/certs"
+VAULT_CONFIG_FILE_PATH = "/vault/config/vault.hcl"
+VAULT_STORAGE_PATH = "/vault/raft"
+
+
+class VaultServiceManager:
+    port = 8200
+    cluster_port = 8201
+
+    def __init__(
+        self, container: Container, charm: CharmBase, tls: VaultTLSManager, service_name: str
+    ):
+        self._container = container
+        self._tls = tls
+        self._model = charm.model
+        self._service_name = service_name
+        self.vault_autounseal_provides = VaultAutounsealProvides(
+            charm, AUTOUNSEAL_PROVIDES_RELATION_NAME
+        )
+        self.vault_autounseal_requires = VaultAutounsealRequires(
+            charm, AUTOUNSEAL_REQUIRES_RELATION_NAME
+        )
+        pass
+
+    def generate_vault_config_file(self, peer_nodes, cluster_address, api_address, node_id):
+        retry_joins = [
+            {
+                "leader_api_addr": node_api_address,
+                "leader_ca_cert_file": f"{CONTAINER_TLS_FILE_DIRECTORY_PATH}/{File.CA.name.lower()}.pem",
+            }
+            for node_api_address in peer_nodes
+        ]
+
+        autounseal_details = VaultAutounsealRequirerManager(
+            self._tls, self._model, self.vault_autounseal_requires
+        ).vault_configuration_details()
+        content = _render_vault_config_file(
+            default_lease_ttl=cast(str, self._model.config["default_lease_ttl"]),
+            max_lease_ttl=cast(str, self._model.config["max_lease_ttl"]),
+            cluster_address=cluster_address,
+            api_address=api_address,
+            tcp_address=f"[::]:{self.port}",
+            tls_cert_file=f"{CONTAINER_TLS_FILE_DIRECTORY_PATH}/{File.CERT.name.lower()}.pem",
+            tls_key_file=f"{CONTAINER_TLS_FILE_DIRECTORY_PATH}/{File.KEY.name.lower()}.pem",
+            raft_storage_path=VAULT_STORAGE_PATH,
+            node_id=node_id,
+            retry_joins=retry_joins,
+            autounseal_details=autounseal_details,
+        )
+        existing_content = ""
+        if self._container.exists(path=VAULT_CONFIG_FILE_PATH):
+            existing_content_stringio = self._container.pull(path=VAULT_CONFIG_FILE_PATH)
+            existing_content = existing_content_stringio.read()
+
+        if not self.config_file_content_matches(
+            existing_content=existing_content, new_content=content
+        ):
+            self._push_config_file_to_workload(content=content)
+            # If the seal type has changed, we need to restart Vault to apply
+            # the changes. SIGHUP is currently only supported as a beta feature
+            # for the enterprise version in Vault 1.16+
+            if self._seal_type_has_changed(existing_content, content):
+                if self._vault_service_is_running():
+                    self._container.restart(self._service_name)
+
+    def _vault_service_is_running(self) -> bool:
+        """Check if the vault service is running."""
+        try:
+            return self._container.get_service(service_name=self._service_name).is_running()
+        except ModelError:
+            return False
+
+    @staticmethod
+    def _contains_transit_stanza(config: dict) -> bool:
+        return "seal" in config and "transit" in config["seal"]
+
+    @staticmethod
+    def _seal_type_has_changed(content_a: str, content_b: str) -> bool:
+        """Check if the seal type has changed between two versions of the Vault configuration file.
+
+        Currently only checks if the transit stanza is present or not, since this
+        is all we support. This function will need to be extended to support
+        alternate cases if and when we support them.
+        """
+        config_a = hcl.loads(content_a)
+        config_b = hcl.loads(content_b)
+        return VaultServiceManager._contains_transit_stanza(
+            config_a
+        ) != VaultServiceManager._contains_transit_stanza(config_b)
+
+    def _push_config_file_to_workload(self, content: str):
+        """Push the config file to the workload."""
+        self._container.push(path=VAULT_CONFIG_FILE_PATH, source=content)
+        logger.info("Pushed %s config file", VAULT_CONFIG_FILE_PATH)
+
+    @staticmethod
+    def config_file_content_matches(existing_content: str, new_content: str) -> bool:
+        """Return whether two Vault config file contents match.
+
+        We check if the retry_join addresses match, and then we check if the rest of the config
+        file matches.
+
+        Returns:
+            bool: Whether the vault config file content matches
+        """
+        existing_config_hcl = hcl.loads(existing_content)
+        new_content_hcl = hcl.loads(new_content)
+        if not existing_config_hcl:
+            logger.info("Existing config file is empty")
+            return existing_config_hcl == new_content_hcl
+        if not new_content_hcl:
+            logger.info("New config file is empty")
+            return existing_config_hcl == new_content_hcl
+
+        new_retry_joins = new_content_hcl["storage"]["raft"].pop("retry_join", [])
+        existing_retry_joins = existing_config_hcl["storage"]["raft"].pop("retry_join", [])
+
+        # If there is only one retry join, it is a dict
+        if isinstance(new_retry_joins, dict):
+            new_retry_joins = [new_retry_joins]
+        if isinstance(existing_retry_joins, dict):
+            existing_retry_joins = [existing_retry_joins]
+
+        new_retry_join_api_addresses = {address["leader_api_addr"] for address in new_retry_joins}
+        existing_retry_join_api_addresses = {
+            address["leader_api_addr"] for address in existing_retry_joins
+        }
+
+        return (
+            new_retry_join_api_addresses == existing_retry_join_api_addresses
+            and new_content_hcl == existing_config_hcl
+        )
+
+
+def _render_vault_config_file(
+    default_lease_ttl: str,
+    max_lease_ttl: str,
+    cluster_address: str,
+    api_address: str,
+    tls_cert_file: str,
+    tls_key_file: str,
+    tcp_address: str,
+    raft_storage_path: str,
+    node_id: str,
+    retry_joins: list[dict[str, str]],
+    autounseal_details: AutounsealConfigurationDetails | None = None,
+) -> str:
+    jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR_PATH))
+    template = jinja2_environment.get_template(CONFIG_TEMPLATE_NAME)
+    content = template.render(
+        default_lease_ttl=default_lease_ttl,
+        max_lease_ttl=max_lease_ttl,
+        cluster_address=cluster_address,
+        api_address=api_address,
+        tls_cert_file=tls_cert_file,
+        tls_key_file=tls_key_file,
+        tcp_address=tcp_address,
+        raft_storage_path=raft_storage_path,
+        node_id=node_id,
+        retry_joins=retry_joins,
+        autounseal_address=autounseal_details.address if autounseal_details else None,
+        autounseal_key_name=autounseal_details.key_name if autounseal_details else None,
+        autounseal_mount_path=autounseal_details.mount_path if autounseal_details else None,
+        autounseal_token=autounseal_details.token if autounseal_details else None,
+        autounseal_tls_ca_cert=autounseal_details.ca_cert_path if autounseal_details else None,
+    )
+    return content

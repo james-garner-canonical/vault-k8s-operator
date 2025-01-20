@@ -738,7 +738,8 @@ class TestVaultK8sIntegrationsPart2:
         status = await ops_test.model.get_status()
         minio_app = status.applications[MINIO_APPLICATION_NAME]
         assert minio_app
-        minio_unit = minio_app.units[f"{MINIO_APPLICATION_NAME}/0"]
+        assert isinstance(minio_app, Application)
+        minio_unit = minio_app.units[0]
         assert minio_unit
         minio_ip = minio_unit.address
         endpoint = f"http://{minio_ip}:9000"

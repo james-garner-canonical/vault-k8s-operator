@@ -322,7 +322,7 @@ name = "click"
 version = "8.1.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "platform_system == 'Windows'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/96/d3/f04c7bfcf5c1862a2a5b845c6b2b360488cf47af55dfa79c98f6a6bf98b5/click-8.1.7.tar.gz", hash = "sha256:ca9853ad459e787e2192211578cc907e7594e294c7ccc834310722b41b9ca6de", size = 336121 }
 wheels = [
@@ -502,6 +502,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8c/e3/7d45f492c2c4a0e8e0fad57d081a7c8a0286cdd86372b070cca1ec0caa1e/executing-2.1.0.tar.gz", hash = "sha256:8ea27ddd260da8150fa5a708269c4a10e76161e2496ec3e587da9e3c0fe4b9ab", size = 977485 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b5/fd/afcd0496feca3276f509df3dbd5dae726fcc756f1a08d9e25abe1733f962/executing-2.1.0-py2.py3-none-any.whl", hash = "sha256:8d63781349375b5ebccc3142f4b30350c0cd9c79f921cde38be2be4637e98eaf", size = 25805 },
+]
+
+[[package]]
+name = "file-ops"
+version = "0.0.0"
+source = { git = "https://github.com/james-garner-canonical/file-ops#fde7cd940a60f0915126a629739f5bffba42b76b" }
+dependencies = [
+    { name = "ops" },
+    { name = "typing-extensions" },
 ]
 
 [[package]]
@@ -1799,6 +1808,7 @@ dependencies = [
     { name = "boto3-stubs", extra = ["s3"] },
     { name = "cosl" },
     { name = "cryptography" },
+    { name = "file-ops" },
     { name = "hvac" },
     { name = "jinja2" },
     { name = "jsonschema" },
@@ -1836,6 +1846,7 @@ requires-dist = [
     { name = "boto3-stubs", extras = ["s3"] },
     { name = "cosl" },
     { name = "cryptography" },
+    { name = "file-ops", git = "https://github.com/james-garner-canonical/file-ops" },
     { name = "hvac" },
     { name = "jinja2" },
     { name = "jsonschema" },

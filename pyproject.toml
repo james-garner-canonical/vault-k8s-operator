@@ -21,6 +21,7 @@ dependencies = [
     "pyhcl",
     "requests",
     "rpds-py==0.22.3",
+    "file-ops",
 ]
 
 [dependency-groups]
@@ -93,3 +94,6 @@ skip = "build,lib,venv,icon.svg,.tox,.git,.mypy_cache,.ruff_cache,.coverage"
 [tool.pyright]
 include = ["src/**.py"]
 reportMissingParameterType = true
+
+[tool.uv.sources]
+file-ops = { git = "https://github.com/james-garner-canonical/file-ops" }

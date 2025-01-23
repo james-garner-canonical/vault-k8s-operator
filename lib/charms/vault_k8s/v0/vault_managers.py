@@ -35,8 +35,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, auto
-from typing import FrozenSet, MutableMapping, TextIO
+from typing import FrozenSet, MutableMapping
 
+import file_ops
 from charms.certificate_transfer_interface.v0.certificate_transfer import (
     CertificateTransferProvides,
 )
@@ -146,33 +147,8 @@ class TLSMode(Enum):
 
 
 # TODO Move this class, it doesn't belong here.
-class WorkloadBase(ABC):
+class WorkloadBase(ABC, file_ops.FileOps):
     """Define an interface for the Machine and Container classes."""
-
-    @abstractmethod
-    def exists(self, path: str) -> bool:
-        """Check if a file exists in the workload."""
-        pass
-
-    @abstractmethod
-    def pull(self, path: str) -> TextIO:
-        """Read file from the workload."""
-        pass
-
-    @abstractmethod
-    def push(self, path: str, source: str) -> None:
-        """Write file to the workload."""
-        pass
-
-    @abstractmethod
-    def make_dir(self, path: str) -> None:
-        """Create directory in the workload."""
-        pass
-
-    @abstractmethod
-    def remove_path(self, path: str, recursive: bool = False) -> None:
-        """Remove file or directory from the workload."""
-        pass
 
     @abstractmethod
     def send_signal(self, signal: int, process: str) -> None:

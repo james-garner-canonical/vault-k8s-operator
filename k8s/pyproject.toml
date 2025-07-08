@@ -37,3 +37,9 @@ dev = ["codespell", "pyright", "ruff", "types-hvac"]
 
 [tool.uv.sources]
 vault = { path = "vendored/vault-package" }
+
+[tool.ruff]
+extend = "../pyproject.toml"
+
+[tool.pyright]
+extend = "../pyproject.toml"

@@ -1025,7 +1025,9 @@ class PKIManager:
         self._allow_any_name = allow_any_name if allow_any_name is not None else False
         self._allow_ip_sans = allow_ip_sans if allow_ip_sans is not None else False
         self._organization = organization if organization is not None else None
-        self._organizational_unit = organizational_unit if organizational_unit is not None else None
+        self._organizational_unit = (
+            organizational_unit if organizational_unit is not None else None
+        )
         self._country = country if country is not None else None
         self._province = province if province is not None else None
         self._locality = locality if locality is not None else None
@@ -1645,7 +1647,9 @@ class ACMEManager:
         self._allow_any_name = allow_any_name if allow_any_name is not None else False
         self._allow_ip_sans = allow_ip_sans if allow_ip_sans is not None else False
         self._organization = organization if organization is not None else None
-        self._organizational_unit = organizational_unit if organizational_unit is not None else None
+        self._organizational_unit = (
+            organizational_unit if organizational_unit is not None else None
+        )
         self._country = country if country is not None else None
         self._province = province if province is not None else None
         self._locality = locality if locality is not None else None

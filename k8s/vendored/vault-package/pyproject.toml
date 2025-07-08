@@ -1,5 +1,5 @@
 [project]
-name = "vault-operator"
+name = "vault"
 version = "0.1.0"
 requires-python = ">=3.10"
 
@@ -17,19 +17,11 @@ dependencies = [
     "pytest-interface-tester",
     "rpds-py==0.23.1",
     "hvac",
-    "vault",
 ]
 
-[dependency-groups]
-test = [
-    "coverage[toml]",
-    "juju",
-    "pytest",
-    "pytest-asyncio==0.21.2",
-    "pytest-dependency",
-    "pytest-operator",
-]
-dev = ["codespell", "pyright", "ruff"]
+[build-system]
+requires = ["uv_build>=0.7.19,<0.8.0"]
+build-backend = "uv_build"
 
-[tool.uv.sources]
-vault = { path = "vendored/vault-package" }
+[tool.uv]
+package = true

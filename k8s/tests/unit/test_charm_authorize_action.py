@@ -3,51 +3,15 @@
 # See LICENSE file for licensing details.
 
 import ops.testing as testing
-import pytest
 import vault.testing.authorize_action
-from vault.vault_client import AuditDeviceType, VaultClientError
+from vault.vault_client import AuditDeviceType
 
 from fixtures import MockBinding, VaultCharmFixtures
 
 
 class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
     def containers(self):
-        container = testing.Container(
-            name="vault",
-            can_connect=True,
-        )
-        return [container]
-
-    def test_given_vault_client_error_when_authorize_charm_then_action_fails(self):
-        my_error_message = "my error message"
-        self.mock_lib_vault.configure_mock(
-            **{
-                "authenticate.return_value": True,
-                "enable_audit_device.side_effect": VaultClientError(my_error_message),
-            },
-        )
-        container = testing.Container(
-            name="vault",
-            can_connect=True,
-        )
-        user_provided_secret = testing.Secret(
-            tracked_content={"token": "my token"},
-        )
-        state_in = testing.State(
-            containers=[container],
-            leader=True,
-            secrets=[user_provided_secret],
-        )
-        with pytest.raises(testing.ActionFailed) as exc:
-            self.ctx.run(
-                self.ctx.on.action(
-                    "authorize-charm", params={"secret-id": user_provided_secret.id}
-                ),
-                state=state_in,
-            )
-        msg = exc.value.message.lower()
-        assert "vault returned an error while authorizing the charm" in msg
-        assert my_error_message in msg
+        return [testing.Container(name="vault", can_connect=True)]
 
     def test_given_when_authorize_charm_then_charm_is_authorized(self):
         mock_vault = self.mock_lib_vault

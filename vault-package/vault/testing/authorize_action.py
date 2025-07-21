@@ -9,6 +9,7 @@ import pytest
 from ops import testing
 
 from vault.testing.mocks import VaultCharmFixturesBase
+from vault.vault_client import VaultClientError
 
 
 # we inherit from VaultCharmFixturesBase to satisfy the type checker for e.g. self.mock_vault
@@ -25,6 +26,10 @@ class Tests(VaultCharmFixturesBase):
 
     # machine tests will override this
     def networks(self) -> typing.Iterable[testing.Network]:
+        return ()
+
+    # machine tests will override this
+    def relations(self) -> typing.Iterable[testing.RelationBase]:
         return ()
 
     def test_given_unit_not_leader_when_authorize_charm_then_action_fails(self):
@@ -56,13 +61,12 @@ class Tests(VaultCharmFixturesBase):
     def test_given_ca_certificate_unavailable_when_authorize_charm_then_fails(self):
         self.mock_tls.configure_mock(**{"tls_file_available_in_charm.return_value": False})
         secret = testing.Secret(tracked_content={"token": "invalid token"})
-        peer_relation = testing.PeerRelation(endpoint="vault-peers")
         state_in = testing.State(
             containers=self.containers(),
             networks=self.networks(),
+            relations=self.relations(),
             leader=True,
             secrets=[secret],
-            relations=[peer_relation],
         )
         event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         with pytest.raises(testing.ActionFailed) as e:
@@ -71,16 +75,37 @@ class Tests(VaultCharmFixturesBase):
             "CA certificate is not available in the charm. Something is wrong."
         )
 
-    def test_given_invalid_token_when_authorize_charm_then_action_fails(self):
-        self.mock_lib_vault.configure_mock(**{"authenticate.return_value": False})
+    def test_given_vault_client_error_when_authorize_charm_then_action_fails(self):
+        my_error_message = "my error message"
+        self.mock_lib_vault.configure_mock(
+            **{
+                "authenticate.return_value": True,
+                "enable_audit_device.side_effect": VaultClientError(my_error_message),
+            }
+        )
         secret = testing.Secret(tracked_content={"token": "invalid token"})
-        peer_relation = testing.PeerRelation(endpoint="vault-peers")
         state_in = testing.State(
             containers=self.containers(),
             networks=self.networks(),
+            relations=self.relations(),
             leader=True,
             secrets=[secret],
-            relations=[peer_relation],
+        )
+        event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
+        with pytest.raises(testing.ActionFailed) as e:
+            self.ctx.run(event, state=state_in)
+        assert "Vault returned an error while authorizing the charm" in e.value.message
+        assert my_error_message in e.value.message
+
+    def test_given_invalid_token_when_authorize_charm_then_action_fails(self):
+        self.mock_lib_vault.configure_mock(**{"authenticate.return_value": False})
+        secret = testing.Secret(tracked_content={"token": "invalid token"})
+        state_in = testing.State(
+            containers=self.containers(),
+            networks=self.networks(),
+            relations=self.relations(),
+            leader=True,
+            secrets=[secret],
         )
         event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         with pytest.raises(testing.ActionFailed) as e:

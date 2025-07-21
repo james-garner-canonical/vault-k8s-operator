@@ -13,11 +13,11 @@ from fixtures import VaultCharmFixtures
 
 class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
     def networks(self):
-        network = testing.Network(
-            "vault-peers",
-            bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
-        )
-        return [network]
+        bind_address = testing.BindAddress([testing.Address("1.2.1.2")])
+        return [testing.Network("vault-peers", bind_addresses=[bind_address])]
+
+    def relations(self):
+        return [testing.PeerRelation(endpoint="vault-peers")]
 
     def test_given_api_address_unavailable_when_authorize_charm_then_fails(self):
         # Only the machine charm will raise this error, as the k8s charm always returns an address

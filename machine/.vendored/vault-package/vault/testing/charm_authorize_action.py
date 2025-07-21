@@ -42,9 +42,10 @@ class Tests:
         event = self.ctx.on.action("authorize-charm", params={"secret-id": "my secret id"})
         with pytest.raises(testing.ActionFailed) as e:
             self.ctx.run(event, state=state_in)
-        msg = e.value.message
-        assert "The secret id provided could not be found by the charm." in msg
-        assert "Please grant the token secret to the charm." in msg
+        assert e.value.message == (
+            "The secret id provided could not be found by the charm."
+            " Please grant the token secret to the charm."
+        )
 
     def test_given_no_token_when_authorize_charm_then_action_fails(self):
         secret = testing.Secret(tracked_content={"no-token": "no token"})
@@ -52,9 +53,9 @@ class Tests:
         event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         with pytest.raises(testing.ActionFailed) as e:
             self.ctx.run(event, state=state_in)
-        msg = e.value.message
-        assert "Token not found in the secret." in msg
-        assert "Please provide a valid token secret." in msg
+        assert e.value.message == (
+            "Token not found in the secret. Please provide a valid token secret."
+        )
 
     def test_given_ca_certificate_unavailable_when_authorize_charm_then_fails(self):
         self.mock_tls.configure_mock(**{"tls_file_available_in_charm.return_value": False})
@@ -74,11 +75,11 @@ class Tests:
         )
 
     def test_given_vault_client_error_when_authorize_charm_then_action_fails(self):
-        my_error_message = "my error message"
+        msg = "my error message"
         self.mock_lib_vault.configure_mock(
             **{
                 "authenticate.return_value": True,
-                "enable_audit_device.side_effect": VaultClientError(my_error_message),
+                "enable_audit_device.side_effect": VaultClientError(msg),
             }
         )
         secret = testing.Secret(tracked_content={"token": "invalid token"})
@@ -92,8 +93,7 @@ class Tests:
         event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         with pytest.raises(testing.ActionFailed) as e:
             self.ctx.run(event, state=state_in)
-        assert "Vault returned an error while authorizing the charm" in e.value.message
-        assert my_error_message in e.value.message
+        assert e.value.message == f"Vault returned an error while authorizing the charm: {msg}"
 
     def test_given_invalid_token_when_authorize_charm_then_action_fails(self):
         self.mock_lib_vault.configure_mock(**{"authenticate.return_value": False})

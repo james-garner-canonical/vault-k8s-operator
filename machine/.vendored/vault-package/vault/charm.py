@@ -80,8 +80,8 @@ class VaultCharmBase(ops.CharmBase):
             )
             secret_id = vault.generate_role_secret_id(name=role_name)
         except vault_client.VaultClientError as e:
-            error = "Vault returned an error while authorizing the charm."
-            logger.exception(error)
+            error = "Vault returned an error while authorizing the charm"
+            logger.exception("%s.", error)
             return event.fail(f"{error}: {str(e)}")
         self.juju_facade.set_app_secret_content(
             content={"role-id": role_id, "secret-id": secret_id},

@@ -12,67 +12,22 @@ from fixtures import VaultCharmFixtures
 
 
 class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
+    def networks(self):
+        network = testing.Network(
+            "vault-peers",
+            bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+        )
+        return [network]
+
     def test_given_api_address_unavailable_when_authorize_charm_then_fails(self):
-        self.mock_vault.configure_mock(
-            **{
-                "authenticate.return_value": False,
-            },
-        )
-        token_secret = testing.Secret(
-            label="vault-approle-auth-details",
-            tracked_content={"token": "my token"},
-        )
-        state_in = testing.State(
-            leader=True,
-            secrets=[token_secret],
-            networks={
-                testing.Network(
-                    "vault-peers",
-                    bind_addresses=[testing.BindAddress([testing.Address("")])],
-                )
-            },
-        )
-
+        # Only the machine charm will raise this error, as the k8s charm always returns an address
+        self.mock_vault.configure_mock(**{"authenticate.return_value": False})
+        secret = testing.Secret(tracked_content={"token": "my token"})
+        state_in = testing.State(leader=True, secrets=[secret])
+        event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         with pytest.raises(ActionFailed) as e:
-            self.ctx.run(
-                self.ctx.on.action("authorize-charm", params={"secret-id": token_secret.id}),
-                state_in,
-            )
+            self.ctx.run(event, state_in)
         assert e.value.message == "API address is not available."
-
-    def test_given_ca_certificate_unavailable_when_authorize_charm_then_fails(self):
-        self.mock_tls.configure_mock(
-            **{
-                "tls_file_available_in_charm.return_value": False,
-            },
-        )
-        token_secret = testing.Secret(
-            label="vault-approle-auth-details",
-            tracked_content={"token": "my token"},
-        )
-        peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
-        )
-        state_in = testing.State(
-            leader=True,
-            secrets=[token_secret],
-            relations=[peer_relation],
-            networks={
-                testing.Network(
-                    "vault-peers",
-                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
-                )
-            },
-        )
-
-        with pytest.raises(ActionFailed) as e:
-            self.ctx.run(
-                self.ctx.on.action("authorize-charm", params={"secret-id": token_secret.id}),
-                state_in,
-            )
-        assert (
-            e.value.message == "CA certificate is not available in the charm. Something is wrong."
-        )
 
     def test_given_when_authorize_charm_then_charm_is_authorized(self):
         mock_vault = self.mock_lib_vault

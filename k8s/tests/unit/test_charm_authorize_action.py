@@ -11,7 +11,7 @@ from fixtures import MockBinding, VaultCharmFixtures
 
 
 class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
-    def containers(self) -> list[testing.Container]:
+    def containers(self):
         container = testing.Container(
             name="vault",
             can_connect=True,

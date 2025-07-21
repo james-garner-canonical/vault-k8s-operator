@@ -23,6 +23,10 @@ class Tests(VaultCharmFixturesBase):
     def containers(self) -> typing.Iterable[testing.Container]:
         return ()
 
+    # machine tests will override this
+    def networks(self) -> typing.Iterable[testing.Network]:
+        return ()
+
     def test_given_unit_not_leader_when_authorize_charm_then_action_fails(self):
         state_in = testing.State(containers=self.containers(), leader=False)
         event = self.ctx.on.action("authorize-charm")
@@ -40,8 +44,7 @@ class Tests(VaultCharmFixturesBase):
         assert "Please grant the token secret to the charm." in msg
 
     def test_given_no_token_when_authorize_charm_then_action_fails(self):
-        self.mock_vault.configure_mock(**{"authenticate.return_value": False})
-        secret = testing.Secret(tracked_content={"no-token": "no token"})  # user provided
+        secret = testing.Secret(tracked_content={"no-token": "no token"})
         state_in = testing.State(containers=self.containers(), leader=True, secrets=[secret])
         event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         with pytest.raises(testing.ActionFailed) as e:
@@ -50,15 +53,35 @@ class Tests(VaultCharmFixturesBase):
         assert "Token not found in the secret." in msg
         assert "Please provide a valid token secret." in msg
 
-    def test_given_invalid_token_when_authorize_charm_then_action_fails(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_given_ca_certificate_unavailable_when_authorize_charm_then_fails(self):
+        self.mock_tls.configure_mock(**{"tls_file_available_in_charm.return_value": False})
+        secret = testing.Secret(tracked_content={"token": "invalid token"})
+        peer_relation = testing.PeerRelation(endpoint="vault-peers")
+        state_in = testing.State(
+            containers=self.containers(),
+            networks=self.networks(),
+            leader=True,
+            secrets=[secret],
+            relations=[peer_relation],
+        )
+        event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
+        with pytest.raises(testing.ActionFailed) as e:
+            self.ctx.run(event, state_in)
+        assert e.value.message == (
+            "CA certificate is not available in the charm. Something is wrong."
+        )
+
+    def test_given_invalid_token_when_authorize_charm_then_action_fails(self):
         self.mock_lib_vault.configure_mock(**{"authenticate.return_value": False})
-        # avoid API address being unavailable in machine charm
-        if hasattr(self.charm_type, "_bind_address"):
-            monkeypatch.setattr(self.charm_type, "_bind_address", "1.2.3.4")
-        secret = testing.Secret(tracked_content={"token": "invalid token"})  # user provided
-        state_in = testing.State(containers=self.containers(), leader=True, secrets=[secret])
+        secret = testing.Secret(tracked_content={"token": "invalid token"})
+        peer_relation = testing.PeerRelation(endpoint="vault-peers")
+        state_in = testing.State(
+            containers=self.containers(),
+            networks=self.networks(),
+            leader=True,
+            secrets=[secret],
+            relations=[peer_relation],
+        )
         event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         with pytest.raises(testing.ActionFailed) as e:
             self.ctx.run(event, state=state_in)

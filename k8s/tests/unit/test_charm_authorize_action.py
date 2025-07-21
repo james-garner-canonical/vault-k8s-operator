@@ -18,36 +18,6 @@ class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_actio
         )
         return [container]
 
-    def test_given_invalid_token_when_authorize_charm_then_action_fails(self):
-        self.mock_lib_vault.configure_mock(
-            **{
-                "authenticate.return_value": False,
-            },
-        )
-        container = testing.Container(
-            name="vault",
-            can_connect=True,
-        )
-        user_provided_secret = testing.Secret(
-            tracked_content={"token": "invalid token"},
-        )
-        state_in = testing.State(
-            containers=[container],
-            leader=True,
-            secrets=[user_provided_secret],
-        )
-        with pytest.raises(testing.ActionFailed) as exc:
-            self.ctx.run(
-                self.ctx.on.action(
-                    "authorize-charm", params={"secret-id": user_provided_secret.id}
-                ),
-                state=state_in,
-            )
-        assert (
-            "The token provided is not valid. Please use a Vault token with the appropriate permissions."
-            == exc.value.message
-        )
-
     def test_given_vault_client_error_when_authorize_charm_then_action_fails(self):
         my_error_message = "my error message"
         self.mock_lib_vault.configure_mock(

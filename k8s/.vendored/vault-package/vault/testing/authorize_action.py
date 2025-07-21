@@ -4,6 +4,7 @@
 
 import typing
 
+import ops
 import pytest
 from ops import testing
 
@@ -16,6 +17,7 @@ from vault.testing.mocks import VaultCharmFixturesBase
 # class here has no runtime effect and could be replaced with e.g. type: ignore comments
 class Tests(VaultCharmFixturesBase):
     ctx: testing.Context  # k8s and machine classes will provide this with their charm class
+    charm_type: type[ops.CharmBase]  # likewise provided by k8s and machine subclasses
 
     # k8s tests will override this
     def containers(self) -> typing.Iterable[testing.Container]:
@@ -47,3 +49,20 @@ class Tests(VaultCharmFixturesBase):
         msg = e.value.message
         assert "Token not found in the secret." in msg
         assert "Please provide a valid token secret." in msg
+
+    def test_given_invalid_token_when_authorize_charm_then_action_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        self.mock_lib_vault.configure_mock(**{"authenticate.return_value": False})
+        # avoid API address being unavailable in machine charm
+        if hasattr(self.charm_type, "_bind_address"):
+            monkeypatch.setattr(self.charm_type, "_bind_address", "1.2.3.4")
+        secret = testing.Secret(tracked_content={"token": "invalid token"})  # user provided
+        state_in = testing.State(containers=self.containers(), leader=True, secrets=[secret])
+        event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
+        with pytest.raises(testing.ActionFailed) as e:
+            self.ctx.run(event, state=state_in)
+        assert e.value.message == (
+            "The token provided is not valid."
+            " Please use a Vault token with the appropriate permissions."
+        )

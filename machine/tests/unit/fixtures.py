@@ -13,6 +13,8 @@ from charm import VaultOperatorCharm
 
 
 class VaultCharmFixtures(VaultCharmFixturesBase):
+    charm_type = VaultOperatorCharm
+
     @pytest.fixture(autouse=True)
     def setup(self):
         with (
@@ -33,4 +35,4 @@ class VaultCharmFixtures(VaultCharmFixturesBase):
 
     @pytest.fixture(autouse=True)
     def context(self):
-        self.ctx = testing.Context(charm_type=VaultOperatorCharm)
+        self.ctx = testing.Context(charm_type=self.charm_type)

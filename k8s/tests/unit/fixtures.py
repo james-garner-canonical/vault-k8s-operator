@@ -12,6 +12,8 @@ from charm import VaultCharm
 
 
 class VaultCharmFixtures(VaultCharmFixturesBase):
+    charm_type = VaultCharm
+
     @pytest.fixture(autouse=True)
     def setup(self):
         with (
@@ -25,7 +27,7 @@ class VaultCharmFixtures(VaultCharmFixturesBase):
 
     @pytest.fixture(autouse=True)
     def context(self):
-        self.ctx = testing.Context(charm_type=VaultCharm)
+        self.ctx = testing.Context(charm_type=self.charm_type)
 
 
 class MockNetwork:

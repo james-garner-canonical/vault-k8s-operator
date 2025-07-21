@@ -4,24 +4,19 @@
 
 import ops.testing as testing
 import pytest
+import vault.testing.authorize_action
 from vault.vault_client import AuditDeviceType, VaultClientError
 
 from fixtures import MockBinding, VaultCharmFixtures
 
 
-class TestCharmAuthorizeAction(VaultCharmFixtures):
-    def test_given_unit_not_leader_when_authorize_charm_then_action_fails(self):
+class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
+    def containers(self) -> list[testing.Container]:
         container = testing.Container(
             name="vault",
             can_connect=True,
         )
-        state_in = testing.State(
-            containers=[container],
-            leader=False,
-        )
-        with pytest.raises(testing.ActionFailed) as exc:
-            self.ctx.run(self.ctx.on.action("authorize-charm"), state=state_in)
-        assert "This action must be run on the leader unit." in exc.value.message
+        return [container]
 
     def test_given_secret_id_not_found_when_authorize_charm_then_action_fails(self):
         container = testing.Container(

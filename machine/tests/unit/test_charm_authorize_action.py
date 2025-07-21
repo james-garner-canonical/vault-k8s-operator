@@ -4,24 +4,14 @@
 
 import ops.testing as testing
 import pytest
+import vault.testing.authorize_action
 from ops.testing import ActionFailed
 from vault.vault_client import AuditDeviceType
 
 from fixtures import VaultCharmFixtures
 
 
-class TestCharmAuthorizeAction(VaultCharmFixtures):
-    def test_given_unit_not_leader_when_authorize_cham_action_then_fails(self):
-        state_in = testing.State(
-            leader=False,
-        )
-
-        with pytest.raises(ActionFailed) as e:
-            self.ctx.run(self.ctx.on.action("authorize-charm"), state_in)
-        msg = e.value.message.lower()
-        assert "action" in msg
-        assert "leader" in msg
-
+class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
     def test_given_secret_id_not_found_when_authorize_charm_then_fails(self):
         state_in = testing.State(
             leader=True,

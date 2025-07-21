@@ -12,21 +12,6 @@ from fixtures import VaultCharmFixtures
 
 
 class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
-    def test_given_secret_id_not_found_when_authorize_charm_then_fails(self):
-        state_in = testing.State(
-            leader=True,
-        )
-
-        with pytest.raises(ActionFailed) as e:
-            self.ctx.run(
-                self.ctx.on.action("authorize-charm", params={"secret-id": "my secret id"}),
-                state_in,
-            )
-        assert (
-            e.value.message
-            == "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
-        )
-
     def test_given_api_address_unavailable_when_authorize_charm_then_fails(self):
         self.mock_vault.configure_mock(
             **{

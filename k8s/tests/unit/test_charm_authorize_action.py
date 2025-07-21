@@ -18,26 +18,6 @@ class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_actio
         )
         return [container]
 
-    def test_given_secret_id_not_found_when_authorize_charm_then_action_fails(self):
-        container = testing.Container(
-            name="vault",
-            can_connect=True,
-        )
-        state_in = testing.State(
-            containers=[container],
-            leader=True,
-        )
-
-        with pytest.raises(testing.ActionFailed) as exc:
-            self.ctx.run(
-                self.ctx.on.action("authorize-charm", params={"secret-id": "my secret id"}),
-                state=state_in,
-            )
-        assert (
-            "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
-            == exc.value.message
-        )
-
     def test_given_no_token_when_authorize_charm_then_action_fails(self):
         self.mock_vault.configure_mock(
             **{

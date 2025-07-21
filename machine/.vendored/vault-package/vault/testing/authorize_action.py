@@ -21,3 +21,12 @@ class Tests:
         with pytest.raises(testing.ActionFailed) as e:
             self.ctx.run(event, state=state_in)
         assert e.value.message == "This action must be run on the leader unit."
+
+    def test_given_secret_id_not_found_when_authorize_charm_then_action_fails(self):
+        state_in = testing.State(containers=self.containers(), leader=True)
+        event = self.ctx.on.action("authorize-charm", params={"secret-id": "my secret id"})
+        with pytest.raises(testing.ActionFailed) as e:
+            self.ctx.run(event, state=state_in)
+        msg = e.value.message
+        assert "The secret id provided could not be found by the charm." in msg
+        assert "Please grant the token secret to the charm." in msg

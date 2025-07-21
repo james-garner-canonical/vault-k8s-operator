@@ -3,22 +3,24 @@
 # ruff: noqa: D101, D102
 
 import typing
+import unittest.mock
 
 import ops
 import pytest
 from ops import testing
 
-from vault.testing.mocks import VaultCharmFixturesBase
-from vault.vault_client import VaultClientError
+from vault.vault_client import AuditDeviceType, VaultClientError
 
 
-# we inherit from VaultCharmFixturesBase to satisfy the type checker for e.g. self.mock_vault
-# these attributes are only actually set by the autouse fixtures in the machine and k8s charms
-# VaultCharmFixtures classes (which inherit from VaultCharmFixturesBase), meaning that the base
-# class here has no runtime effect and could be replaced with e.g. type: ignore comments
-class Tests(VaultCharmFixturesBase):
-    ctx: testing.Context  # k8s and machine classes will provide this with their charm class
-    charm_type: type[ops.CharmBase]  # likewise provided by k8s and machine subclasses
+class Tests:
+    # attributes provided by {k8s,machine}/tests/unit/fixtures.VaultCharmFixtures
+    ctx: testing.Context
+    charm_type: type[ops.CharmBase]
+    mock_tls: unittest.mock.MagicMock
+    mock_lib_vault: unittest.mock.MagicMock
+
+    def relations(self):
+        return [testing.PeerRelation(endpoint="vault-peers")]
 
     # k8s tests will override this
     def containers(self) -> typing.Iterable[testing.Container]:
@@ -26,10 +28,6 @@ class Tests(VaultCharmFixturesBase):
 
     # machine tests will override this
     def networks(self) -> typing.Iterable[testing.Network]:
-        return ()
-
-    # machine tests will override this
-    def relations(self) -> typing.Iterable[testing.RelationBase]:
         return ()
 
     def test_given_unit_not_leader_when_authorize_charm_then_action_fails(self):
@@ -114,3 +112,45 @@ class Tests(VaultCharmFixturesBase):
             "The token provided is not valid."
             " Please use a Vault token with the appropriate permissions."
         )
+
+    def test_given_when_authorize_charm_then_charm_is_authorized(self):
+        mock_vault = self.mock_lib_vault
+        mock_vault.configure_mock(
+            **{
+                "authenticate.return_value": True,
+                "create_or_update_approle.return_value": "my-role-id",
+                "generate_role_secret_id.return_value": "my-secret-id",
+            },
+        )
+        secret = testing.Secret(tracked_content={"token": "invalid token"})
+        state_in = testing.State(
+            containers=self.containers(),
+            networks=self.networks(),
+            relations=self.relations(),
+            leader=True,
+            secrets=[secret],
+        )
+        event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
+        state_out = self.ctx.run(event, state=state_in)
+
+        mock_vault.enable_audit_device.assert_called_once_with(
+            device_type=AuditDeviceType.FILE, path="stdout"
+        )
+        mock_vault.enable_approle_auth_method.assert_called_once()
+        mock_vault.create_or_update_policy_from_file.assert_called_once_with(
+            name="charm-access",
+            path="src/templates/charm_policy.hcl",
+        )
+        mock_vault.create_or_update_approle.assert_called_once_with(
+            name="charm",
+            policies=["charm-access", "default"],
+            token_ttl="1h",
+            token_max_ttl="1h",
+        )
+        assert self.ctx.action_results == {
+            "result": "Charm authorized successfully. You may now remove the secret."
+        }
+        assert state_out.get_secret(label="vault-approle-auth-details").tracked_content == {
+            "role-id": "my-role-id",
+            "secret-id": "my-secret-id",
+        }

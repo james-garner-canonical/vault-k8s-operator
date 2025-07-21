@@ -4,13 +4,13 @@
 
 import ops.testing as testing
 import pytest
-import vault.testing.authorize_action
+import vault.testing.charm_authorize_action
 from ops.testing import ActionFailed
 
 from fixtures import VaultCharmFixtures
 
 
-class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.authorize_action.Tests):
+class TestCharmAuthorizeAction(VaultCharmFixtures, vault.testing.charm_authorize_action.Tests):
     def networks(self):
         bind_address = testing.BindAddress([testing.Address("1.2.1.2")])
         return [testing.Network("vault-peers", bind_addresses=[bind_address])]

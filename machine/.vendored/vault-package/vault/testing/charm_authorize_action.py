@@ -22,11 +22,11 @@ class Tests:
     def relations(self):
         return [testing.PeerRelation(endpoint="vault-peers")]
 
-    # k8s tests will override this
+    # k8s tests override this
     def containers(self) -> typing.Iterable[testing.Container]:
         return ()
 
-    # machine tests will override this
+    # machine tests override this
     def networks(self) -> typing.Iterable[testing.Network]:
         return ()
 
@@ -132,7 +132,6 @@ class Tests:
         )
         event = self.ctx.on.action("authorize-charm", params={"secret-id": secret.id})
         state_out = self.ctx.run(event, state=state_in)
-
         mock_vault.enable_audit_device.assert_called_once_with(
             device_type=AuditDeviceType.FILE, path="stdout"
         )

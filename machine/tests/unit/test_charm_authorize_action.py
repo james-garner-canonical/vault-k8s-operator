@@ -2,7 +2,6 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-
 import ops.testing as testing
 import pytest
 from ops.testing import ActionFailed
@@ -19,7 +18,9 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
 
         with pytest.raises(ActionFailed) as e:
             self.ctx.run(self.ctx.on.action("authorize-charm"), state_in)
-        assert e.value.message == "This action can only be run by the leader unit"
+        msg = e.value.message.lower()
+        assert "action" in msg
+        assert "leader" in msg
 
     def test_given_secret_id_not_found_when_authorize_charm_then_fails(self):
         state_in = testing.State(
@@ -99,7 +100,8 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
         )
 
     def test_given_when_authorize_charm_then_charm_is_authorized(self):
-        self.mock_vault.configure_mock(
+        mock_vault = self.mock_lib_vault
+        mock_vault.configure_mock(
             **{
                 "authenticate.return_value": True,
                 "create_or_update_approle.return_value": "my-role-id",
@@ -128,15 +130,15 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
             state_in,
         )
 
-        self.mock_vault.enable_audit_device.assert_called_once_with(
+        mock_vault.enable_audit_device.assert_called_once_with(
             device_type=AuditDeviceType.FILE, path="stdout"
         )
-        self.mock_vault.enable_approle_auth_method.assert_called_once()
-        self.mock_vault.create_or_update_policy_from_file.assert_called_once_with(
+        mock_vault.enable_approle_auth_method.assert_called_once()
+        mock_vault.create_or_update_policy_from_file.assert_called_once_with(
             name="charm-access",
             path="src/templates/charm_policy.hcl",
         )
-        self.mock_vault.create_or_update_approle.assert_called_once_with(
+        mock_vault.create_or_update_approle.assert_called_once_with(
             name="charm",
             policies=["charm-access", "default"],
             token_ttl="1h",

@@ -60,4 +60,4 @@ ignore = [
 ]
 
 [tool.uv.sources]
-vault-package = { path = ".vendored/vault-package", editable = true }
+vault-package = { path = "vault-package", editable = true }

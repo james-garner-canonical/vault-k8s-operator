@@ -3,6 +3,10 @@ name: Build
 on:
   workflow_call:
     inputs:
+      name:
+        description: Name to be appended to the charmcraft yaml file
+        required: true
+        type: string
       path:
         description: Path to the charm's root directory
         required: true
@@ -31,7 +35,9 @@ jobs:
         run: sudo snap install charmcraft --classic
 
       - name: Build charm under test
-        run: charmcraft pack --verbose --project-dir ${{ inputs.path }}
+        run: |
+          ln --symbolic --force charmcraft-${{ inputs.name }}.yaml charmcraft.yaml
+          charmcraft pack --verbose
 
       - name: Archive Charm Under Test
         uses: actions/upload-artifact@v4
@@ -39,6 +45,7 @@ jobs:
           name: ${{ inputs.vault-charm-artifact-name }}
           path: "*.charm"
           retention-days: 5
+          if-no-files-found: error
 
   build-kv-requirer:
     runs-on: ubuntu-latest

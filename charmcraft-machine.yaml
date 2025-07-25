@@ -95,8 +95,14 @@ platforms:
   amd64:
 
 parts:
-  charm:
+  copy-common-code:
+    plugin: nil
     source: .
+    override-build: cp -r vault-package machine/
+  charm:
+    after:
+      - copy-common-code
+    source: machine
     plugin: uv
     build-packages:
       - libffi-dev

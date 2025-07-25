@@ -142,8 +142,14 @@ platforms:
   amd64:
 
 parts:
-  charm:
+  copy-common-code:
+    plugin: nil
     source: .
+    override-build: cp -r vault-package k8s/
+  charm:
+    after:
+      - copy-common-code
+    source: k8s
     plugin: uv
     build-packages:
       - libffi-dev

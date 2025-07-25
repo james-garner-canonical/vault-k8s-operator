@@ -142,15 +142,7 @@ platforms:
   amd64:
 
 parts:
-  common-code:
-    plugin: nil
-    source: .
-    override-build: mv vault-package $CRAFT_PART_INSTALL/
-    stage: [vault-package]  # stage vault-package so charm part can access it
-    prime: [-vault-package]  # exclude staged vault-package from charm
   charm:
-    after:
-      - common-code
     source: k8s
     plugin: uv
     build-packages:
@@ -161,7 +153,7 @@ parts:
       - astral-uv
       - rustup
     override-build: |
-      ln --symbolic --force $CRAFT_STAGE/vault-package
+      ln --symbolic --force $CRAFT_PROJECT_DIR/vault-package
       rustup default stable
       craftctl default
 

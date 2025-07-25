@@ -95,13 +95,15 @@ platforms:
   amd64:
 
 parts:
-  copy-common-code:
+  common-code:
     plugin: nil
     source: .
-    override-build: cp -r vault-package machine/
+    override-build: mv vault-package $CRAFT_PART_INSTALL/
+    stage: [vault-package]  # stage vault-package so charm part can access it
+    prime: [-vault-package]  # exclude staged vault-package from charm
   charm:
     after:
-      - copy-common-code
+      - common-code
     source: machine
     plugin: uv
     build-packages:
@@ -112,6 +114,7 @@ parts:
       - astral-uv
       - rustup
     override-build: |
+      ln --symbolic --force $CRAFT_STAGE/vault-package
       rustup default stable
       craftctl default
 

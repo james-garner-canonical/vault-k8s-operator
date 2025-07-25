@@ -3,10 +3,6 @@ name: Build
 on:
   workflow_call:
     inputs:
-      name:
-        description: Name to be appended to the charmcraft yaml file
-        required: true
-        type: string
       path:
         description: Path to the charm's root directory
         required: true
@@ -36,7 +32,7 @@ jobs:
 
       - name: Build charm under test
         run: |
-          ln --symbolic --force charmcraft-${{ inputs.name }}.yaml charmcraft.yaml
+          ln --symbolic ${{ inputs.path }}charmcraft.yaml
           charmcraft pack --verbose
 
       - name: Archive Charm Under Test

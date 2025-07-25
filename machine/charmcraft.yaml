@@ -96,8 +96,7 @@ platforms:
 
 parts:
   charm:
-    source: .
-    source-subdir: machine
+    source: machine
     plugin: uv
     build-packages:
       - libffi-dev
@@ -107,6 +106,7 @@ parts:
       - astral-uv
       - rustup
     override-build: |
+      ln --symbolic --force $CRAFT_PROJECT_DIR/vault-package
       rustup default stable
       craftctl default
 
